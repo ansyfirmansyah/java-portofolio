@@ -1,4 +1,6 @@
-🔐 Auth
+# Layanan otentikasi untuk aplikasi Java Portofolio menggunakan Spring Boot.
+
+## 🔐 Auth
 1. Register via email only, validasi domain email. 
 2. Email verifikasi (SMTP Gmail manual dulu)
 3. Login via email, rate limit failed login attempts 
@@ -10,7 +12,7 @@
 9. Role: USER, ADMIN 
 10. User info endpoint: untuk validasi downstream oleh BE logic
 
-🔧 Tech stack:
+## 🔧 Tech stack:
 1. Spring Boot 
 2. Spring Security 
 3. JWT (with sessionId)
@@ -20,7 +22,7 @@
 7. JavaMailSender (untuk verifikasi email & forgot password)
 8. Swagger/OpenAPI 3
 
-🧠 Step-by-step pseudocode plan (Auth Service)
+### 🧠 Step-by-step pseudocode plan (Auth Service)
 1. Entities:
    - User (id, email, password, role, emailVerified, createdAt)
    - VerificationToken (for email verification)
@@ -54,5 +56,5 @@
 4. Run auth service
 
 ## Run semua docker dengan docker compose
-./mvnw clean package -DskipTests
-docker-compose up --build
+1. ./mvnw clean package -DskipTests
+2. docker-compose up --build
