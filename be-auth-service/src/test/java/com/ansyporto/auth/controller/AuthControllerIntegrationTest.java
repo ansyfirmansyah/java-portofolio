@@ -1,15 +1,18 @@
 package com.ansyporto.auth.controller;
 
+import com.ansyporto.auth.dto.LoginRequest;
 import com.ansyporto.auth.dto.RegisterRequest;
 import com.ansyporto.auth.entity.User;
 import com.ansyporto.auth.entity.VerificationToken;
 import com.ansyporto.auth.repository.UserRepository;
 import com.ansyporto.auth.repository.VerificationTokenRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -36,6 +39,16 @@ public class AuthControllerIntegrationTest {
 
     @Autowired
     private VerificationTokenRepository verificationTokenRepository;
+
+    @Autowired
+    private StringRedisTemplate redisTemplate;
+
+    @AfterEach
+    void cleanupRedisKeys() {
+        redisTemplate.delete("RATE_LIMIT:LOGIN_FAIL:ratelimit@example.com:127.0.0.1");
+        redisTemplate.delete("RATE_LIMIT:LOGIN_FAIL:failuser@example.com:127.0.0.1");
+    }
+
 
     @Test
     @Transactional
@@ -141,4 +154,82 @@ public class AuthControllerIntegrationTest {
                 .andExpect(jsonPath("$.success").value(false))
                 .andExpect(jsonPath("$.message").exists());
     }
+
+    @Test
+    @Transactional
+    void login_shouldSucceedWithCorrectCredentials() throws Exception {
+        User user = new User();
+        user.setEmail("loginuser@example.com");
+        user.setPassword("$2a$10$eUIidNd7dWn6CN5XLqg8E.VBCiAfq6a6xfQBKFAqox7KW2NvqSQiS"); // Password1 (bcrypt)
+        user.setEmailVerified(true);
+        user.setCreatedAt(Instant.now());
+        user.setUpdatedAt(Instant.now());
+        user = userRepository.save(user);
+
+        LoginRequest request = new LoginRequest();
+        request.setEmail("loginuser@example.com");
+        request.setPassword("Password1");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.token").exists())
+                .andExpect(jsonPath("$.data.expiredAt").exists());
+    }
+
+    @Test
+    @Transactional
+    void login_shouldFailWithInvalidPassword() throws Exception {
+        User user = new User();
+        user.setEmail("failuser@example.com");
+        user.setPassword("$2a$10$DdDQ3lrbgb62aXXFzQGrve7jWeapAQ7UtFG9XbwVXRa9Mkp/Kj14i"); // Password1
+        user.setEmailVerified(true);
+        user.setCreatedAt(Instant.now());
+        user.setUpdatedAt(Instant.now());
+        user = userRepository.save(user);
+
+        LoginRequest request = new LoginRequest();
+        request.setEmail("failuser@example.com");
+        request.setPassword("WrongPassword");
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Email dan/atau Password tidak valid"));
+    }
+
+    @Test
+    @Transactional
+    void login_shouldFailIfRateLimited() throws Exception {
+        User user = new User();
+        user.setEmail("ratelimit@example.com");
+        user.setPassword("$2a$10$eUIidNd7dWn6CN5XLqg8E.VBCiAfq6a6xfQBKFAqox7KW2NvqSQiS"); // Password1
+        user.setEmailVerified(true);
+        user.setCreatedAt(Instant.now());
+        user.setUpdatedAt(Instant.now());
+        userRepository.save(user);
+
+        LoginRequest request = new LoginRequest();
+        request.setEmail("ratelimit@example.com");
+        request.setPassword("WrongPassword");
+
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        mockMvc.perform(post("/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").exists());
+    }
+
 }

@@ -13,7 +13,7 @@ spring:
     show-sql: false
   data:
     redis:
-      url: redis://default:redispass123@localhost:6379
+      url: redis://default:supersecret@localhost:6379
   mail:
     host: <your-smtp-host>
     port: <your-smtp-port>
@@ -53,3 +53,5 @@ app:
   verification-url: http://localhost:8080/auth/verify
   frontend-base-url: http://localhost:5173
   mail-from: <your-smtp-email>
+  jwt-secret: AvengersDoomsdayThreeHundreds2025
+  jwt-expiration: 3600

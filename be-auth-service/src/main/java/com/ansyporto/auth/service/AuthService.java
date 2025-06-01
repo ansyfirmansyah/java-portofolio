@@ -1,14 +1,19 @@
 package com.ansyporto.auth.service;
 
+import com.ansyporto.auth.dto.ApiResponse;
+import com.ansyporto.auth.dto.LoginRequest;
+import com.ansyporto.auth.dto.LoginResponse;
 import com.ansyporto.auth.dto.RegisterRequest;
 import com.ansyporto.auth.entity.Role;
 import com.ansyporto.auth.entity.User;
 import com.ansyporto.auth.entity.UserActivityAudit;
 import com.ansyporto.auth.entity.VerificationToken;
 import com.ansyporto.auth.exception.RateLimitException;
+import com.ansyporto.auth.exception.UnauthorizedException;
 import com.ansyporto.auth.repository.UserActivityAuditRepository;
 import com.ansyporto.auth.repository.UserRepository;
 import com.ansyporto.auth.repository.VerificationTokenRepository;
+import com.ansyporto.auth.security.RedisLoginRateLimiter;
 import com.ansyporto.auth.utils.EmailValidatorUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +25,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,12 +38,12 @@ public class AuthService {
     private final VerificationTokenRepository tokenRepository;
     private final MailService mailService;
     private final MessageSource messageSource;
-
-    private static final List<String> ALLOWED_DOMAINS = List.of("gmail.com", "outlook.com", "microsoft.com", "yahoo.com");
+    private final JwtService jwtService;
+    private final RedisSessionService redisSessionService;
+    private final RedisLoginRateLimiter rateLimiter;
 
     public void register(RegisterRequest request, HttpServletRequest http) {
         String email = request.getEmail();
-        String domain = email.substring(email.indexOf("@") + 1);
         String ip = http.getRemoteAddr();
         boolean success = false;
         UUID userId = null;
@@ -113,5 +117,62 @@ public class AuthService {
         tokenRepository.save(v);
         userRepository.save(v.getUser());
         return true;
+    }
+
+    public ApiResponse<LoginResponse> login(LoginRequest request, HttpServletRequest http) {
+        String email = request.getEmail();
+        String ip = http.getRemoteAddr();
+        String ua = http.getHeader("User-Agent");
+        UUID userId = null;
+        boolean success = false;
+
+        if (rateLimiter.isBlocked(email, ip)) {
+            String message = messageSource.getMessage("login.rateLimit", null, LocaleContextHolder.getLocale());
+            throw new RateLimitException(message);
+        }
+
+        try {
+            User user = (User) userRepository.findByEmailIgnoreCase(request.getEmail())
+                    .orElseThrow(() -> new UnauthorizedException("login.invalidCredentials"));
+
+            if (!user.isEmailVerified()) {
+                String message = messageSource.getMessage("login.unverifiedEmail", null, LocaleContextHolder.getLocale());
+                throw new UnauthorizedException(message);
+            }
+
+            if (!BCrypt.checkpw(request.getPassword(), user.getPassword())) {
+                String message = messageSource.getMessage("login.invalidCredentials", null, LocaleContextHolder.getLocale());
+                throw new UnauthorizedException(message);
+            }
+
+            String sessionId = UUID.randomUUID().toString();
+            Instant issuedAt = Instant.now();
+            Instant expiredAt = issuedAt.plusSeconds(jwtService.getExpiration());
+            userId = user.getId();
+
+            String token = jwtService.generateToken(user.getId(), String.valueOf(user.getRole()), sessionId, issuedAt, expiredAt);
+            redisSessionService.storeSession(user.getId(), sessionId, expiredAt);
+
+            String message = messageSource.getMessage("login.success", null, LocaleContextHolder.getLocale());
+            return ApiResponse.success(message,
+                    LoginResponse.builder()
+                            .token(token)
+                            .expiredAt(expiredAt)
+                            .build()
+            );
+        } catch (UnauthorizedException e) {
+            rateLimiter.recordFailure(email, ip);
+            throw e;
+        } finally {
+            auditRepository.save(UserActivityAudit.builder()
+                    .id(UUID.randomUUID())
+                    .userId(userId)
+                    .email(email)
+                    .activityType("LOGIN")
+                    .success(success)
+                    .ipAddress(ip)
+                    .userAgent(ua)
+                    .build());
+        }
     }
 }

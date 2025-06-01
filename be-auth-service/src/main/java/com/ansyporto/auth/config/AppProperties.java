@@ -15,6 +15,8 @@ public class AppProperties {
     private String verificationUrl;
     private String frontendBaseUrl;
     private String mailFrom;
+    private String jwtSecret;
+    private Long jwtExpiration;
 
     @PostConstruct
     public void validate() {
@@ -23,6 +25,12 @@ public class AppProperties {
         }
         if (mailFrom == null || mailFrom.isBlank()) {
             throw new IllegalStateException("Missing required property: app.mail-from");
+        }
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException("Missing required property: app.jwt-secret");
+        }
+        if (jwtExpiration == null) {
+            throw new IllegalStateException("Missing required property: app.jwt-expiration");
         }
     }
 }

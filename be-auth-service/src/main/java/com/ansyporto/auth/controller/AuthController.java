@@ -1,6 +1,8 @@
 package com.ansyporto.auth.controller;
 
 import com.ansyporto.auth.dto.ApiResponse;
+import com.ansyporto.auth.dto.LoginRequest;
+import com.ansyporto.auth.dto.LoginResponse;
 import com.ansyporto.auth.dto.RegisterRequest;
 import com.ansyporto.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,6 +34,11 @@ public class AuthController {
         String key = result ? "verification.success" : "verification.invalid";
         String message = messageSource.getMessage(key, null, LocaleContextHolder.getLocale());
         return ResponseEntity.ok(result ? ApiResponse.success(message) : ApiResponse.error(message));
+    }
+
+    @PostMapping("/login")
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+        return authService.login(request, http);
     }
 }
 
