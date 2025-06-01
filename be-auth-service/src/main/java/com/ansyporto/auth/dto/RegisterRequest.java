@@ -9,15 +9,15 @@ import lombok.Data;
 @Data
 public class RegisterRequest {
 
-    @Email
+    @Email(message = "{registration.invalidEmail}")
     @NotBlank
     private String email;
 
     @NotBlank
-    @Size(min = 8, message = "Password must be at least 8 characters")
+    @Size(min = 8, message = "{registration.invalidShortPassword}")
     @Pattern(
             regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)[A-Za-z\\d]{8,}$",
-            message = "Password must contain uppercase, lowercase, and number (without special character)"
+            message = "{registration.invalidSimplePassword}"
     )
     private String password;
 }
